@@ -1,6 +1,5 @@
 package mapbuilder
 
-//TODO: Make it more performant/memory safer by passing pointers around when possible
 import (
 	"../../link/link"
 	"bytes"
