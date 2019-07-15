@@ -34,31 +34,31 @@ func main() {
 func handler(client hn.Client, numStories int, tpl *template.Template) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		ids, err := client.TopItems()
+		ids, err := client.TopItems() // returns around 450 unique ids
 		if err != nil {
 			http.Error(w, "Failed to load top stories", http.StatusInternalServerError)
 			return
 		}
-		s := newStories()
+		s := newStories() //holds map of items, slice of ids, mutex
 		wg := &sync.WaitGroup{}
 		for _, id := range ids {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
-				hnItem, err := client.GetItem(id)
+				hnItem, err := client.GetItem(id) // reach out to API to get full item details
 				if err != nil {
 					return
 				}
 				item := parseHNItem(hnItem)
-				if isStoryLink(item) {
+				if isStoryLink(item) { // if it's the type we want, let's save it
 					s.mu.Lock()
 					defer s.mu.Unlock()
-					s.items[id] = item
-					s.ids = append(s.ids, id)
-					if len(s.items) == numStories {
-						// TODO: Cause all other goroutines to quit
-						return
-					}
+					s.items[id] = item        // save item
+					s.ids = append(s.ids, id) // save id
+					//issue here is, we are still reaching out to the API 450 times
+					// Yes, we do it concurrently, but that's a lot of times.
+					// Benchmark ends up being the same as hitting it 30 times sequentially.
+					// so concurrency right now does not represent any performance gain
 				}
 			}(id)
 
@@ -67,9 +67,11 @@ func handler(client hn.Client, numStories int, tpl *template.Template) http.Hand
 		var items []item
 		sort.Ints(s.ids)
 		for _, id := range s.ids {
-			fmt.Println(id)
 			item, _ := s.items[id]
 			items = append(items, item)
+			if len(items) == numStories { //this is where we are capping the displayed items to 30
+				break
+			}
 		}
 		data := templateData{
 			Stories: items,
