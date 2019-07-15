@@ -40,7 +40,6 @@ func handler(client hn.Client, numStories int, tpl *template.Template) http.Hand
 			return
 		}
 		s := newStories()
-		var validIDs []int
 		wg := &sync.WaitGroup{}
 		for _, id := range ids {
 			wg.Add(1)
@@ -55,7 +54,7 @@ func handler(client hn.Client, numStories int, tpl *template.Template) http.Hand
 					s.mu.Lock()
 					defer s.mu.Unlock()
 					s.items[id] = item
-					validIDs = append(validIDs, id)
+					s.ids = append(s.ids, id)
 					if len(s.items) == numStories {
 						// TODO: Cause all other goroutines to quit
 						return
@@ -66,8 +65,8 @@ func handler(client hn.Client, numStories int, tpl *template.Template) http.Hand
 		}
 		wg.Wait()
 		var items []item
-		sort.Ints(validIDs)
-		for _, id := range validIDs {
+		sort.Ints(s.ids)
+		for _, id := range s.ids {
 			fmt.Println(id)
 			item, _ := s.items[id]
 			items = append(items, item)
@@ -105,6 +104,7 @@ type item struct {
 
 type stories struct {
 	items map[int]item
+	ids   []int
 	mu    sync.RWMutex
 }
 
