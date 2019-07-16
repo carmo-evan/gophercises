@@ -41,18 +41,16 @@ func handler(client hn.Client, numStories int, tpl *template.Template) http.Hand
 		}
 		tasks := make(chan int, len(ids))
 		results := make(chan item, len(ids))
-		workersCount := 30
+		workersCount := 500
 		wg := sync.WaitGroup{}
 		wg.Add(workersCount)
 		for i := 0; i < workersCount; i++ {
 			go func() {
 				defer wg.Done()
 				for id := range tasks {
-					hnItem, err := client.GetItem(id) // reach out to API to get full item details
-					if err != nil {
-						panic(err)
-					}
+					hnItem, _ := client.GetItem(id) // reach out to API to get full item details
 					item := parseHNItem(hnItem)
+
 					results <- item
 				}
 			}()
@@ -66,15 +64,14 @@ func handler(client hn.Client, numStories int, tpl *template.Template) http.Hand
 
 		wg.Wait()
 
-		var items []item
+		close(results)
 
+		var items []item
 		for item := range results {
 			if isStoryLink(item) {
 				items = append(items, item)
 			}
 		}
-
-		close(results)
 
 		sort.Slice(items, func(i, j int) bool {
 			return items[i].ID < items[j].ID
