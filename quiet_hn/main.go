@@ -33,25 +33,35 @@ func main() {
 
 func handler(client hn.Client, numStories int, tpl *template.Template) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		start := time.Now()
+
 		ids, err := client.TopItems() // returns around 500 unique ids
+
 		if err != nil {
 			http.Error(w, "Failed to load top stories", http.StatusInternalServerError)
 			return
 		}
+
+		sort.Ints(ids)
+		ids = ids[:numStories]
+
 		tasks := make(chan int, len(ids))
-		results := make(chan item, len(ids))
-		workersCount := 500
+		stories := stories{}
+		workersCount := numStories
 		wg := sync.WaitGroup{}
+
 		wg.Add(workersCount)
+
 		for i := 0; i < workersCount; i++ {
 			go func() {
 				defer wg.Done()
 				for id := range tasks {
 					hnItem, _ := client.GetItem(id) // reach out to API to get full item details
 					item := parseHNItem(hnItem)
-
-					results <- item
+					stories.mu.Lock()
+					stories.items = append(stories.items, item)
+					stories.mu.Unlock()
 				}
 			}()
 		}
@@ -64,21 +74,12 @@ func handler(client hn.Client, numStories int, tpl *template.Template) http.Hand
 
 		wg.Wait()
 
-		close(results)
-
-		var items []item
-		for item := range results {
-			if isStoryLink(item) {
-				items = append(items, item)
-			}
-		}
-
-		sort.Slice(items, func(i, j int) bool {
-			return items[i].ID < items[j].ID
+		sort.Slice(stories.items, func(i, j int) bool {
+			return stories.items[i].ID < stories.items[j].ID
 		})
 
 		data := templateData{
-			Stories: items[:30],
+			Stories: stories.items,
 			Time:    time.Now().Sub(start),
 		}
 		err = tpl.Execute(w, data)
@@ -109,15 +110,8 @@ type item struct {
 }
 
 type stories struct {
-	items map[int]item
-	ids   []int
+	items []item
 	mu    sync.RWMutex
-}
-
-func newStories() *stories {
-	var s stories
-	s.items = make(map[int]item)
-	return &s
 }
 
 type templateData struct {
